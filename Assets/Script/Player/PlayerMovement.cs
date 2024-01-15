@@ -14,7 +14,6 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private LayerMask _cornerCorrectLayer;
 
     [Header("Movement Variables")]
-    public ParticleSystem dust;
     [SerializeField] private float _movementAcceleration = 20f;
     [SerializeField] private float _maxMoveSpeed = 10f;
     [SerializeField] private float _groundLinearDrag = 7f;
@@ -46,7 +45,7 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float _wallJumpXVelocityHaltDelay = 0.2f;
     private bool _wallGrab => _onWall && !_onGround && Input.GetButton("WallGrab") && !_wallRun;
     private bool _wallSlide => _onWall && !_onGround && !Input.GetButton("WallGrab") && _rb.velocity.y < 0f && !_wallRun;
-    private bool _wallRun => _onWall && _verticalDirection > 0f;
+    private bool _wallRun => _onWall && _verticalDirection < 0f;
 
     [Header("Ground Collision Variables")]
     [SerializeField] private float _groundRaycastLength = 0.8f;
@@ -85,7 +84,7 @@ public class PlayerMovement : MonoBehaviour
         {
             Flip();
         }
-       
+
 
     }
 
@@ -95,15 +94,15 @@ public class PlayerMovement : MonoBehaviour
         CheckCollisions();
 
         if (_canMove) MoveCharacter();
-
         else _rb.velocity = Vector2.Lerp(_rb.velocity, (new Vector2(_horizontalDirection * _maxMoveSpeed, _rb.velocity.y)), .5f * Time.deltaTime);
+                
         if (_onGround)
         {
             ApplyGroundLinearDrag();
             _extraJumpsValue = _extraJumps;
             _hangTimeCounter = _hangTime;
             _rb.gravityScale = 2;
-
+            
         }
         else
         {
@@ -241,6 +240,7 @@ public class PlayerMovement : MonoBehaviour
 
     void WallRun()
     {
+       
         _rb.velocity = new Vector2(_rb.velocity.x, _verticalDirection * _maxMoveSpeed * _wallRunModifier);
     }
 
@@ -271,6 +271,7 @@ public class PlayerMovement : MonoBehaviour
     {
         _facingRight = !_facingRight;
         transform.Rotate(0f, 180f, 0f);
+       
     }
 
     void CornerCorrect(float Yvelocity)
