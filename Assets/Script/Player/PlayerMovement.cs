@@ -7,13 +7,15 @@ public class PlayerMovement : MonoBehaviour
 {
     [Header("Components")]
     protected Rigidbody2D _rb;
+    private PlayerCtrl _ctrl;
+    private Ghost _ghost;
 
     [Header("Layer Masks")]
     [SerializeField] private LayerMask _groundLayer;
     [SerializeField] private LayerMask _wallLayer;
     [SerializeField] private LayerMask _cornerCorrectLayer;
 
-    [Header("Movement Variables")]
+    [Header("Movement ")]
     [SerializeField] private float _movementAcceleration = 20f;
     [SerializeField] private float _maxMoveSpeed = 10f;
     [SerializeField] private float _groundLinearDrag = 7f;
@@ -24,7 +26,7 @@ public class PlayerMovement : MonoBehaviour
     private bool _changingDirection => (_rb.velocity.x > 0f && _horizontalDirection < 0f) || (_rb.velocity.x < 0f && _horizontalDirection > 0f);
     private bool _facingRight = false;
 
-    [Header("Jump Variables")]
+    [Header("Jump ")]
     [SerializeField] private float _jumpForce = 20f;
     [SerializeField] private float _airLinearDrag = 3f;
     [SerializeField] private float _fallMultiplier = 7f;
@@ -32,14 +34,14 @@ public class PlayerMovement : MonoBehaviour
     [SerializeField] private float _downMultiplier = 7f;
     [SerializeField] private int _extraJumps = 1;
     [SerializeField] private float _hangTime = .1f;
-    [SerializeField] private float _jumpBufferLength = .1f;
+    [SerializeField] private float _jumpBufferLength = .075f;
     private int _extraJumpsValue;
     private float _hangTimeCounter;
     private float _jumpBufferCounter;
     private bool _canJump => _jumpBufferCounter > 0f && (_hangTimeCounter > 0f || _extraJumpsValue > 0 || _onWall);
     private bool _isJumping = false;
 
-    [Header("Wall Movement Variables")]
+    [Header("Wall Movement ")]
     [SerializeField] private float _wallSlideModifier = 0.2f;
     [SerializeField] private float _wallRunModifier = 0.85f;
     [SerializeField] private float _wallJumpXVelocityHaltDelay = 0.2f;
@@ -47,17 +49,28 @@ public class PlayerMovement : MonoBehaviour
     private bool _wallSlide => _onWall && !_onGround && !Input.GetButton("WallGrab") && _rb.velocity.y < 0f && !_wallRun;
     private bool _wallRun => _onWall && _verticalDirection < 0f;
 
-    [Header("Ground Collision Variables")]
+    [Header("Dash")]
+    [SerializeField] private float dashSpeed = 15f;
+    [SerializeField] private float dashLength = .3f;
+    [SerializeField] private float dashDelay = 0.3f;
+    private SpriteRenderer render;
+    private float dashCounter;
+    private Sprite curSprite;
+    private bool _isDashing;
+    private bool _hasDash;
+    private bool _canDash => dashCounter < 0 && _onGround && !_hasDash && Input.GetButton("Slice");
+
+    [Header("Ground Collision ")]
     [SerializeField] private float _groundRaycastLength = 0.8f;
     [SerializeField] private Vector3 _groundRaycastOffset = new Vector3(0.21f, 0, 0);
     private bool _onGround;
 
-    [Header("Wall Collision Variables")]
+    [Header("Wall Collision ")]
     [SerializeField] private float _wallRaycastLength = 0.63f;
     private bool _onWall;
     private bool _onRightWall;
 
-    [Header("Corner Correction Variables")]
+    [Header("Corner Correction ")]
     [SerializeField] private float _topRaycastLength = 0.69f;
     [SerializeField] private Vector3 _edgeRaycastOffset = new Vector3(0.31f, 0, 0);
     [SerializeField] private Vector3 _innerRaycastOffset = new Vector3(0.03f, 0, 0);
@@ -71,6 +84,8 @@ public class PlayerMovement : MonoBehaviour
         _groundLayer = LayerMask.GetMask("Ground");
         _wallLayer = LayerMask.GetMask("Ground");
         _cornerCorrectLayer = LayerMask.GetMask("Ground");
+        _ctrl = GetComponent<PlayerCtrl>();
+        _ghost = GetComponent<Ghost>();
 
     }
 
@@ -84,7 +99,20 @@ public class PlayerMovement : MonoBehaviour
         {
             Flip();
         }
-
+        if (dashCounter >= 0)
+        {
+            dashCounter -= Time.deltaTime;
+        }
+        Animation();
+        if((!_onGround||_isDashing)&&!_onWall)
+        {
+            _ghost.makeGhost = true;
+            _ghost.MakeGhostRender();
+        }
+        else
+        {
+            _ghost.makeGhost = false;
+        }
 
     }
 
@@ -92,7 +120,14 @@ public class PlayerMovement : MonoBehaviour
     {
        
         CheckCollisions();
-
+        if (_canDash)
+        {
+            StartCoroutine(Dash());
+        }
+        if (_isDashing)
+        {
+            return;
+        }
         if (_canMove) MoveCharacter();
         else _rb.velocity = Vector2.Lerp(_rb.velocity, (new Vector2(_horizontalDirection * _maxMoveSpeed, _rb.velocity.y)), .5f * Time.deltaTime);
                 
@@ -102,6 +137,7 @@ public class PlayerMovement : MonoBehaviour
             _extraJumpsValue = _extraJumps;
             _hangTimeCounter = _hangTime;
             _rb.gravityScale = 2;
+            _hasDash= false;
             
         }
         else
@@ -142,6 +178,20 @@ public class PlayerMovement : MonoBehaviour
         if (_canCornerCorrect) CornerCorrect(_rb.velocity.y);
     }
 
+    void Animation()
+    {
+        _ctrl.anim.SetBool("Dash", _isDashing);
+        if (_isDashing)
+        {
+            return;
+        }
+        _ctrl.anim.SetBool("OnGround", _onGround);
+        _ctrl.anim.SetBool("Run", _horizontalDirection != 0);
+        _ctrl.anim.SetBool("OnWall", _onWall);
+        float yVelocity = _rb.velocity.y > 0 ? 0 : 1;
+        _ctrl.anim.SetFloat("yVelocity", yVelocity);
+    }
+
     private Vector2 GetInput()
     {
         return new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
@@ -180,13 +230,14 @@ public class PlayerMovement : MonoBehaviour
     {
         if (!_onGround && !_onWall)
             _extraJumpsValue--;
-
+                
         ApplyAirLinearDrag();
         _rb.velocity = new Vector2(_rb.velocity.x, 0f);
         _rb.AddForce(direction * _jumpForce, ForceMode2D.Impulse);
         _hangTimeCounter = 0f;
         _jumpBufferCounter = 0f;
         _isJumping = true;
+        
     }
 
     private void WallJump()
@@ -266,7 +317,32 @@ public class PlayerMovement : MonoBehaviour
             Flip();
         }
     }
+    IEnumerator Dash()
+    {
+        float dashStartTime = Time.time;
+        _hasDash = true;
+        _isDashing = true;
+       // _ghost.makeGhost = true;
 
+        _rb.velocity = Vector2.zero;
+        _rb.gravityScale = 0f;
+        _rb.drag = 0f;
+
+        Vector2 dir;
+        if (_facingRight) dir = new Vector2(-1f, 0f);
+        else dir = new Vector2(1f, 0f);
+
+        while (Time.time < dashStartTime + dashLength)
+        {
+           //_ghost.MakeGhostRender();
+            _rb.velocity = dir * dashSpeed;
+            yield return null;
+        }
+
+        //_ghost.makeGhost = false;
+        _isDashing = false;
+        dashCounter = dashDelay;
+    }
     void Flip()
     {
         _facingRight = !_facingRight;
